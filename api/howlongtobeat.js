@@ -25,9 +25,8 @@ export default async function (request, response) {
         return response.status(500).send('Server configuration error: API key missing.');
     }
 
-    // --- REFINED PROMPT TO GET STRUCTURED DATA ---
-    // This prompt asks for all relevant times in a predictable format.
-    const prompt = `Search HowLongToBeat.com for "${gameTitle}". Provide the 'Main Story', 'Main + Extras', 'Completionist', and 'All Styles' average completion times from the primary game entry. If a time is not available or the game is not found, use 'N/A'. Format your response as a single line: "Main: [time], Extras: [time], 100%: [time], All: [time]". Example: "Main: 30h, Extras: 45h 30m, 100%: 60h, All: 48h".`;
+    // --- REFINED PROMPT TO EXPLICITLY ASK FOR "AVERAGE" TIMES ---
+    const prompt = `Search HowLongToBeat.com for "${gameTitle}". From the primary game entry, find the "Average" time for 'Main Story', 'Main + Extras', 'Completionist', and 'All Styles'. If a specific time is not available or the game is not found, use 'N/A'. Format your response as: "Main: [time], Extras: [time], 100%: [time], All: [time]". Example: "Main: 30h, Extras: 45h 30m, 100%: 60h, All: 48h".`;
     console.log(`[Proxy] Prompt for Gemini: "${prompt}"`);
 
     try {
@@ -54,20 +53,27 @@ export default async function (request, response) {
             console.log(`[Proxy] Gemini Text Response: "${geminiTextResponse}"`);
 
             // --- REGULAR EXPRESSION PARSING FOR "Main + Extras" ---
-            const regex = /Extras: ([^,]+)/; // Captures anything after "Extras: " until the next comma
+            // Adjusted regex to robustly capture the Extras time, assuming the new prompt format
+            const regex = /Extras:\s*([^,]+?)(?:,\s*|$)/; // Captures anything after "Extras: " until the next comma or end of string
             const match = geminiTextResponse.match(regex);
 
             if (match && match[1]) {
                 extractedTime = match[1].trim();
                 // Handle "70-75h (approx.)" or similar ranges from the LLM
-                if (extractedTime.includes('-') && extractedTime.includes('h')) {
-                    const rangeParts = extractedTime.replace('h', '').split('-').map(s => parseFloat(s.trim()));
+                if (extractedTime.includes('-') && extractedTime.toLowerCase().includes('h')) {
+                    const rangeParts = extractedTime.toLowerCase().replace('h', '').split('-').map(s => parseFloat(s.trim()));
                     if (rangeParts.length === 2 && !isNaN(rangeParts[0]) && !isNaN(rangeParts[1])) {
-                        extractedTime = `${((rangeParts[0] + rangeParts[1]) / 2).toFixed(1)}h (approx.)`; // Average the range
+                        extractedTime = `${Math.round((rangeParts[0] + rangeParts[1]) / 2)}h (approx.)`; // Average the range and round
                     }
+                } else if (extractedTime.toLowerCase().includes('h') && !extractedTime.toLowerCase().includes('m')) {
+                    extractedTime = `${parseFloat(extractedTime.toLowerCase().replace('h', '').trim())}h`; // Ensure consistent 'Xh' format
+                }
+                // If it's just a number, assume hours
+                else if (!isNaN(parseFloat(extractedTime)) && !extractedTime.toLowerCase().includes('h')) {
+                    extractedTime = `${parseFloat(extractedTime)}h`;
                 }
             } else {
-                console.warn('[Proxy] "Main + Extras" not found in Gemini\'s structured response.');
+                console.warn('[Proxy] "Main + Extras" not found in Gemini\'s structured response or regex failed.');
                 extractedTime = "N/A (Not found)";
             }
         } else {
