@@ -1,10 +1,9 @@
 import fetch from 'node-fetch';
 
 export default async function (request, response) {
-    // Set CORS headers for all responses
-    // For development, use '*' to allow all origins.
-    // For production, replace '*' with your specific GitHub Pages domain, e.g., 'https://yourusername.github.io'
-    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io/theendlessbacklog/'); // IMPORTANT: Change '*' to your GitHub Pages domain in production!
+    // Set CORS headers to allow requests from your GitHub Pages domain
+    // In production, replace '*' with your specific GitHub Pages domain, e.g., 'https://yourusername.github.io'
+    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io/theendlessbacklog/'); 
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -34,7 +33,7 @@ export default async function (request, response) {
 
     try {
         const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
-        const geminiPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }];
+        const geminiPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
         console.log(`[Proxy] Calling Gemini API: ${geminiApiUrl}`);
         const geminiResponse = await fetch(geminiApiUrl, {
