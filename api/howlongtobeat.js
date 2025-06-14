@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 export default async function (request, response) {
     // Set CORS headers to allow requests from your GitHub Pages domain
     // In production, replace '*' with your specific GitHub Pages domain, e.g., 'https://yourusername.github.io'
-    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io/theendlessbacklog/'); 
+    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io'); // Explicitly allow your GitHub Pages domain
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
