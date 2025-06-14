@@ -1,5 +1,5 @@
 {
-  "name": "my-gemini-proxy",
+  "name": "endless-backlog-proxy",
   "version": "1.0.0",
   "description": "Serverless function to proxy HowLongToBeat API calls via Gemini.",
   "main": "api/howlongtobeat.js",
