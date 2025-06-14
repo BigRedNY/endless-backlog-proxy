@@ -4,7 +4,7 @@ export default async function (request, response) {
     // Set CORS headers for all responses
     // For development, use '*' to allow all origins.
     // For production, replace '*' with your specific GitHub Pages domain, e.g., 'https://yourusername.github.io'
-    response.setHeader('Access-Control-Allow-Origin', '*'); // IMPORTANT: Change '*' to your GitHub Pages domain in production!
+    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io/theendlessbacklog/'); // IMPORTANT: Change '*' to your GitHub Pages domain in production!
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
