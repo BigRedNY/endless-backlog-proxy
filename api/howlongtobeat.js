@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 
 export default async function (request, response) {
-    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io'); 
+    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io');
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -25,8 +25,9 @@ export default async function (request, response) {
         return response.status(500).send('Server configuration error: API key missing.');
     }
 
-    // --- REFINED PROMPT ---
-    const prompt = `Search HowLongToBeat.com for "${gameTitle}". From the primary game entry's average times, find the 'Main + Extras' completion time. Prioritize the base game over DLC/collections unless the query specifically indicates a collection/DLC. Respond ONLY with the time (e.g., "30h 15m", "N/A (No data yet)", "70-75h (approx.)"). If 'Main + Extras' is not explicitly listed or clearly identifiable, return "N/A (Not found)".`;
+    // --- REFINED PROMPT TO GET STRUCTURED DATA ---
+    // This prompt asks for all relevant times in a predictable format.
+    const prompt = `Search HowLongToBeat.com for "${gameTitle}". Provide the 'Main Story', 'Main + Extras', 'Completionist', and 'All Styles' average completion times from the primary game entry. If a time is not available or the game is not found, use 'N/A'. Format your response as a single line: "Main: [time], Extras: [time], 100%: [time], All: [time]". Example: "Main: 30h, Extras: 45h 30m, 100%: 60h, All: 48h".`;
     console.log(`[Proxy] Prompt for Gemini: "${prompt}"`);
 
     try {
@@ -44,25 +45,41 @@ export default async function (request, response) {
         const geminiResult = await geminiResponse.json();
         console.log('[Proxy] Raw Gemini API Result:', JSON.stringify(geminiResult, null, 2));
 
+        let extractedTime = "N/A (Parse Error)"; // Default if parsing fails
+
         if (geminiResult.candidates && geminiResult.candidates.length > 0 &&
             geminiResult.candidates[0].content && geminiResult.candidates[0].content.parts &&
             geminiResult.candidates[0].content.parts.length > 0) {
-            const time = geminiResult.candidates[0].content.parts[0].text.trim();
-            
-            // Further client-side validation to ensure it looks like a time
-            if (time.toLowerCase().includes('n/a') || !/\d/.test(time)) {
-                 console.warn(`[Proxy] Extracted time "${time}" is not a valid time format.`);
-                 return response.status(200).json({ time: "N/A (Not found)" });
-            }
+            const geminiTextResponse = geminiResult.candidates[0].content.parts[0].text.trim();
+            console.log(`[Proxy] Gemini Text Response: "${geminiTextResponse}"`);
 
-            console.log(`[Proxy] Successfully extracted time: "${time}"`);
-            return response.status(200).json({ time: time });
+            // --- REGULAR EXPRESSION PARSING FOR "Main + Extras" ---
+            const regex = /Extras: ([^,]+)/; // Captures anything after "Extras: " until the next comma
+            const match = geminiTextResponse.match(regex);
+
+            if (match && match[1]) {
+                extractedTime = match[1].trim();
+                // Handle "70-75h (approx.)" or similar ranges from the LLM
+                if (extractedTime.includes('-') && extractedTime.includes('h')) {
+                    const rangeParts = extractedTime.replace('h', '').split('-').map(s => parseFloat(s.trim()));
+                    if (rangeParts.length === 2 && !isNaN(rangeParts[0]) && !isNaN(rangeParts[1])) {
+                        extractedTime = `${((rangeParts[0] + rangeParts[1]) / 2).toFixed(1)}h (approx.)`; // Average the range
+                    }
+                }
+            } else {
+                console.warn('[Proxy] "Main + Extras" not found in Gemini\'s structured response.');
+                extractedTime = "N/A (Not found)";
+            }
         } else {
             console.warn('[Proxy] Gemini API result did not contain expected data structure or content.');
-            return response.status(200).json({ time: "N/A (API issue)" }); // Changed from "No data yet" to be more specific
+            extractedTime = "N/A (API issue)";
         }
+
+        console.log(`[Proxy] Final extracted time for frontend: "${extractedTime}"`);
+        return response.status(200).json({ time: extractedTime });
+
     } catch (error) {
-        console.error('[Proxy] Error during Gemini API fetch:', error);
+        console.error('[Proxy] Error during Gemini API fetch or processing:', error);
         return response.status(500).send("Error fetching time from API.");
     }
 }
