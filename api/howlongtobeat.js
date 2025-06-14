@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 
 export default async function (request, response) {
-    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io');
+    response.setHeader('Access-Control-Allow-Origin', 'https://bigredny.github.io'); // Explicitly allow your GitHub Pages domain
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -25,13 +25,21 @@ export default async function (request, response) {
         return response.status(500).send('Server configuration error: API key missing.');
     }
 
-    // --- REFINED PROMPT TO EXPLICITLY ASK FOR "AVERAGE" TIMES ---
-    const prompt = `Search HowLongToBeat.com for "${gameTitle}". From the primary game entry, find the "Average" time for 'Main Story', 'Main + Extras', 'Completionist', and 'All Styles'. If a specific time is not available or the game is not found, use 'N/A'. Format your response as: "Main: [time], Extras: [time], 100%: [time], All: [time]". Example: "Main: 30h, Extras: 45h 30m, 100%: 60h, All: 48h".`;
+    // --- REFINED PROMPT TO GET STRUCTURED JSON DATA ---
+    // This prompt instructs Gemini to output a JSON string with specific keys.
+    // It also tries to clarify the 'Average' aspect.
+    const prompt = `Search HowLongToBeat.com for "${gameTitle}". Provide the average completion times for 'Main Story', 'Main + Extras', 'Completionist', and 'All Styles' from the primary game entry. If a time is not available or the game is not found, use 'N/A'. Format your response as a JSON string: {"Main Story": "[time]", "Main + Extras": "[time]", "Completionist": "[time]", "All Styles": "[time]"}. Example: {"Main Story": "30h", "Main + Extras": "45h 30m", "Completionist": "60h", "All Styles": "48h"}.`;
     console.log(`[Proxy] Prompt for Gemini: "${prompt}"`);
 
     try {
         const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
-        const geminiPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+        const geminiPayload = { 
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            // IMPORTANT: Request JSON response type from Gemini for best results
+            generationConfig: {
+                responseMimeType: "application/json",
+            }
+        };
 
         console.log(`[Proxy] Calling Gemini API: ${geminiApiUrl}`);
         const geminiResponse = await fetch(geminiApiUrl, {
@@ -41,40 +49,38 @@ export default async function (request, response) {
         });
 
         console.log(`[Proxy] Gemini API Response Status: ${geminiResponse.status}`);
-        const geminiResult = await geminiResponse.json();
-        console.log('[Proxy] Raw Gemini API Result:', JSON.stringify(geminiResult, null, 2));
+        const geminiRawResult = await geminiResponse.json();
+        console.log('[Proxy] Raw Gemini API Result:', JSON.stringify(geminiRawResult, null, 2));
 
         let extractedTime = "N/A (Parse Error)"; // Default if parsing fails
+        let parsedGeminiData = null;
 
-        if (geminiResult.candidates && geminiResult.candidates.length > 0 &&
-            geminiResult.candidates[0].content && geminiResult.candidates[0].content.parts &&
-            geminiResult.candidates[0].content.parts.length > 0) {
-            const geminiTextResponse = geminiResult.candidates[0].content.parts[0].text.trim();
-            console.log(`[Proxy] Gemini Text Response: "${geminiTextResponse}"`);
+        if (geminiRawResult.candidates && geminiRawResult.candidates.length > 0 &&
+            geminiRawResult.candidates[0].content && geminiRawResult.candidates[0].content.parts &&
+            geminiRawResult.candidates[0].content.parts.length > 0) {
+            
+            const geminiTextResponse = geminiRawResult.candidates[0].content.parts[0].text.trim();
+            console.log(`[Proxy] Gemini Text Response (before JSON parse): "${geminiTextResponse}"`);
 
-            // --- REGULAR EXPRESSION PARSING FOR "Main + Extras" ---
-            // Adjusted regex to robustly capture the Extras time, assuming the new prompt format
-            const regex = /Extras:\s*([^,]+?)(?:,\s*|$)/; // Captures anything after "Extras: " until the next comma or end of string
-            const match = geminiTextResponse.match(regex);
+            try {
+                // Attempt to parse the response as JSON
+                parsedGeminiData = JSON.parse(geminiTextResponse);
+                
+                // Directly access the "Main + Extras" property
+                if (parsedGeminiData && parsedGeminiData["Main + Extras"]) {
+                    extractedTime = parsedGeminiData["Main + Extras"].trim();
+                    console.log(`[Proxy] Successfully extracted "Main + Extras" from JSON: "${extractedTime}"`);
 
-            if (match && match[1]) {
-                extractedTime = match[1].trim();
-                // Handle "70-75h (approx.)" or similar ranges from the LLM
-                if (extractedTime.includes('-') && extractedTime.toLowerCase().includes('h')) {
-                    const rangeParts = extractedTime.toLowerCase().replace('h', '').split('-').map(s => parseFloat(s.trim()));
-                    if (rangeParts.length === 2 && !isNaN(rangeParts[0]) && !isNaN(rangeParts[1])) {
-                        extractedTime = `${Math.round((rangeParts[0] + rangeParts[1]) / 2)}h (approx.)`; // Average the range and round
-                    }
-                } else if (extractedTime.toLowerCase().includes('h') && !extractedTime.toLowerCase().includes('m')) {
-                    extractedTime = `${parseFloat(extractedTime.toLowerCase().replace('h', '').trim())}h`; // Ensure consistent 'Xh' format
+                    // Optional: Re-format if LLM gives "103h 44m" and we want "103h" if minutes are above 30, otherwise just "103h"
+                    // Or keep it as "103h 44m" if that's preferred.
+                    // Your frontend `parseTimeToHours` can handle "Xh Ym" and "Xh"
+                } else {
+                    console.warn('[Proxy] Parsed JSON did not contain "Main + Extras" key or it was empty:', parsedGeminiData);
+                    extractedTime = "N/A (Key not found)";
                 }
-                // If it's just a number, assume hours
-                else if (!isNaN(parseFloat(extractedTime)) && !extractedTime.toLowerCase().includes('h')) {
-                    extractedTime = `${parseFloat(extractedTime)}h`;
-                }
-            } else {
-                console.warn('[Proxy] "Main + Extras" not found in Gemini\'s structured response or regex failed.');
-                extractedTime = "N/A (Not found)";
+            } catch (jsonParseError) {
+                console.error('[Proxy] Failed to parse Gemini response as JSON:', jsonParseError);
+                extractedTime = "N/A (Invalid JSON)";
             }
         } else {
             console.warn('[Proxy] Gemini API result did not contain expected data structure or content.');
@@ -85,7 +91,7 @@ export default async function (request, response) {
         return response.status(200).json({ time: extractedTime });
 
     } catch (error) {
-        console.error('[Proxy] Error during Gemini API fetch or processing:', error);
+        console.error('[Proxy] Error during Gemini API fetch or overall processing:', error);
         return response.status(500).send("Error fetching time from API.");
     }
 }
