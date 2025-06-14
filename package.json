@@ -1,0 +1,10 @@
+{
+  "name": "my-gemini-proxy",
+  "version": "1.0.0",
+  "description": "Serverless function to proxy HowLongToBeat API calls via Gemini.",
+  "main": "api/howlongtobeat.js",
+  "type": "module",
+  "dependencies": {
+    "node-fetch": "^3.0.0"
+  }
+}
