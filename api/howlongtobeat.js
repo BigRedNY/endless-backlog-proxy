@@ -1,7 +1,18 @@
 import fetch from 'node-fetch';
 
 export default async function (request, response) {
-    // Determine if it's a Vercel request or a Netlify-like request
+    // Set CORS headers for all responses
+    // For development, use '*' to allow all origins.
+    // For production, replace '*' with your specific GitHub Pages domain, e.g., 'https://yourusername.github.io'
+    response.setHeader('Access-Control-Allow-Origin', '*'); // IMPORTANT: Change '*' to your GitHub Pages domain in production!
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle preflight OPTIONS request for CORS
+    if (request.method === 'OPTIONS') {
+        return response.status(200).send();
+    }
+
     const { gameTitle } = request.query || request.queryStringParameters; 
 
     console.log(`[Proxy] Received request for gameTitle: "${gameTitle}"`);
@@ -23,7 +34,7 @@ export default async function (request, response) {
 
     try {
         const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
-        const geminiPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+        const geminiPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }];
 
         console.log(`[Proxy] Calling Gemini API: ${geminiApiUrl}`);
         const geminiResponse = await fetch(geminiApiUrl, {
@@ -34,7 +45,7 @@ export default async function (request, response) {
 
         console.log(`[Proxy] Gemini API Response Status: ${geminiResponse.status}`);
         const geminiResult = await geminiResponse.json();
-        console.log('[Proxy] Raw Gemini API Result:', JSON.stringify(geminiResult, null, 2)); // Log raw JSON
+        console.log('[Proxy] Raw Gemini API Result:', JSON.stringify(geminiResult, null, 2));
 
         if (geminiResult.candidates && geminiResult.candidates.length > 0 &&
             geminiResult.candidates[0].content && geminiResult.candidates[0].content.parts &&
